@@ -16,6 +16,17 @@ import {
   Tag,
   TextArea
 } from '@blueprintjs/core';
+import {
+  brokenInputsOfStep,
+  brokenSteps,
+  linkStateMeta,
+  reconcileHandoffs,
+  resolveInputLink,
+  upstreamOutputGroups,
+  type BrokenLink,
+  type StepInput,
+  type StepOutput
+} from './handoff';
 
 type StepStatus = 'draft' | 'submitted' | 'confirmed' | 'returned';
 type ProcessStatus = 'draft' | 'in-review' | 'frozen' | 'revising';
@@ -30,7 +41,7 @@ interface ReviewComment {
   resolved: boolean;
 }
 
-interface ProcessStep {
+export interface ProcessStep {
   id: string;
   title: string;
   purpose: string;
@@ -45,6 +56,8 @@ interface ProcessStep {
   expectedResult: string;
   status: StepStatus;
   comments: ReviewComment[];
+  outputs: StepOutput[];
+  inputs: StepInput[];
 }
 
 interface VersionSnapshot {
@@ -57,7 +70,7 @@ interface VersionSnapshot {
   steps: ProcessStep[];
 }
 
-interface ExperimentProcess {
+export interface ExperimentProcess {
   id: string;
   title: string;
   code: string;
@@ -103,7 +116,11 @@ function initialProcess(): ExperimentProcess {
       dependencies: [], safetyNote: '操作人员需佩戴护目镜和防化手套。', expectedResult: '试剂标签、数量和有效期均核对无误。',
       status: 'confirmed', comments: [
         { id: 'c-1', author: '李明', role: '研究员', text: '已核对批号和有效期，防爆柜温度记录正常。', createdAt: '2026-09-24T09:10:00+08:00', resolved: true }
-      ]
+      ],
+      outputs: [
+        { id: 'out-1-1', name: '已核对试剂', spec: '无水乙醇 120 mL；去离子水 300 mL，批号与有效期已登记' }
+      ],
+      inputs: []
     },
     {
       id: 'step-2', title: '搭建恒温循环装置', purpose: '连接循环浴与反应夹套，检查密封和温控。',
@@ -112,6 +129,12 @@ function initialProcess(): ExperimentProcess {
       dependencies: ['step-1'], safetyNote: '高温表面设置警示标识，循环浴周围保持干燥。', expectedResult: '30 分钟内温度稳定在 55 ± 0.5 ℃。',
       status: 'confirmed', comments: [
         { id: 'c-2', author: '王颖', role: '安全复核员', text: '补充超温断电值，不能只依赖设备自带温控。', createdAt: '2026-09-24T10:05:00+08:00', resolved: true }
+      ],
+      outputs: [
+        { id: 'out-2-1', name: '恒温循环装置', spec: '55 ± 0.5 ℃ 稳定运行，已完成 5 分钟试压，超温断电 65 ℃' }
+      ],
+      inputs: [
+        { id: 'in-2-1', sourceStepId: 'step-1', outputId: 'out-1-1', snapshotName: '已核对试剂', snapshotSpec: '无水乙醇 120 mL；去离子水 300 mL，批号与有效期已登记', usage: '取用前再次核对标签' }
       ]
     },
     {
@@ -119,28 +142,54 @@ function initialProcess(): ExperimentProcess {
       materials: '催化剂 A', equipment: '分析天平、加料漏斗、计时器', amount: '催化剂 A 2.50 ± 0.02 g',
       duration: 20, hazards: ['粉尘吸入', '放热反应'], controls: '在通风柜内称量，佩戴 N95 口罩；分三次少量加入并监测温度。',
       dependencies: ['step-2'], safetyNote: '反应温度超过 70 ℃ 时立即停止加料并启动冷却。', expectedResult: '温度缓慢升至 62–66 ℃，无明显冲料。',
-      status: 'submitted', comments: []
+      status: 'confirmed', comments: [],
+      outputs: [
+        { id: 'out-3-1', name: '反应混合液', spec: '催化剂 A 2.50 ± 0.02 g，62–66 ℃ 反应中，加料三次完成' }
+      ],
+      inputs: [
+        // 上游产物规格后来改为 65 ℃ 超温断电，此处仍为旧快照，载入对账时断链并退回
+        { id: 'in-3-1', sourceStepId: 'step-2', outputId: 'out-2-1', snapshotName: '恒温循环装置', snapshotSpec: '55 ± 0.5 ℃ 稳定运行，已完成 5 分钟试压', usage: '在稳定温控条件下加料' }
+      ]
     },
     {
       id: 'step-4', title: '恒温反应与过程取样', purpose: '维持温度并定时取样观察反应转化。',
       materials: '样品瓶、惰性气体', equipment: '取样针、气相色谱、恒温循环浴', amount: '每点样品约 1 mL，共 6 点',
       duration: 90, hazards: ['高温液体', '挥发性气体'], controls: '取样前泄压；使用长针和防护屏；样品瓶及时封闭。',
       dependencies: ['step-3'], safetyNote: '取样时不得正对瓶口，样品瓶不得完全密封后加热。', expectedResult: '转化率达到 95% 以上且无异常副产物。',
-      status: 'submitted', comments: []
+      status: 'submitted', comments: [],
+      outputs: [
+        { id: 'out-4-1', name: '过程样品', spec: '每点约 1 mL，共 6 点，氮气封存，GC 编号 S1–S6' }
+      ],
+      inputs: [
+        // 上游产物名称已由“反应液”更名为“反应混合液”，此处仍为旧名称，断链待重新确认
+        { id: 'in-4-1', sourceStepId: 'step-3', outputId: 'out-3-1', snapshotName: '反应液', snapshotSpec: '催化剂 A 2.50 ± 0.02 g，62–66 ℃ 反应中，加料三次完成', usage: '维持搅拌并定时取样' }
+      ]
     },
     {
       id: 'step-5', title: '停止加热并冷却', purpose: '终止反应并将体系降至安全温度。',
       materials: '无', equipment: '循环浴、温度探头', amount: '降温目标 ≤ 30 ℃', duration: 35,
       hazards: ['烫伤', '残余反应'], controls: '先停止加料并维持搅拌，再以不超过 1 ℃/min 的速率降温。',
       dependencies: ['step-4'], safetyNote: '确认温度连续 5 分钟低于 30 ℃ 后才能拆除装置。', expectedResult: '体系温度稳定低于 30 ℃。',
-      status: 'draft', comments: []
+      status: 'draft', comments: [],
+      outputs: [
+        { id: 'out-5-1', name: '冷却反应液', spec: '≤ 30 ℃ 且连续稳定 5 分钟，搅拌维持' }
+      ],
+      inputs: [
+        { id: 'in-5-1', sourceStepId: 'step-4', outputId: 'out-4-1', snapshotName: '过程样品', snapshotSpec: '每点约 1 mL，共 6 点，氮气封存，GC 编号 S1–S6', usage: '取样结束后继续维持体系冷却' }
+      ]
     },
     {
       id: 'step-6', title: '废液分类与现场恢复', purpose: '按危险废物要求分类收集并恢复实验区域。',
       materials: '废液桶、吸附棉', equipment: '防化手套、护目镜、危废标签', amount: '按实际产生量记录', duration: 25,
       hazards: ['废液混装', '化学暴露'], controls: '有机废液单独收集，核对相容性后贴标签；泄漏吸附材料按危废处置。',
       dependencies: ['step-5'], safetyNote: '废液不得倒入下水道，现场恢复后完成双人确认。', expectedResult: '废液交接记录完整，台面无残留。',
-      status: 'draft', comments: []
+      status: 'draft', comments: [],
+      outputs: [
+        { id: 'out-6-1', name: '危废交接记录', spec: '有机废液与吸附棉分类贴签，双人签字' }
+      ],
+      inputs: [
+        { id: 'in-6-1', sourceStepId: 'step-5', outputId: 'out-5-1', snapshotName: '冷却反应液', snapshotSpec: '≤ 30 ℃ 且连续稳定 5 分钟，搅拌维持', usage: '确认降温到位后排入废液收集桶' }
+      ]
     }
   ];
 
@@ -174,29 +223,53 @@ function historyReducer(state: HistoryState, action:
     const next = clone(state.present);
     action.update(next);
     next.updatedAt = new Date().toISOString();
+    reconcileHandoffs(next);
     return { past: [...state.past.slice(-59), clone(state.present)], present: next, future: [] };
   }
   if (action.type === 'undo') {
     const previous = state.past.at(-1);
     if (!previous) return state;
-    return { past: state.past.slice(0, -1), present: previous, future: [clone(state.present), ...state.future].slice(0, 60) };
+    const restored = clone(previous);
+    reconcileHandoffs(restored);
+    return { past: state.past.slice(0, -1), present: restored, future: [clone(state.present), ...state.future].slice(0, 60) };
   }
   if (action.type === 'redo') {
     const next = state.future[0];
     if (!next) return state;
-    return { past: [...state.past, clone(state.present)].slice(-60), present: next, future: state.future.slice(1) };
+    const restored = clone(next);
+    reconcileHandoffs(restored);
+    return { past: [...state.past, clone(state.present)].slice(-60), present: restored, future: state.future.slice(1) };
   }
   return { past: [], present: action.value, future: [] };
+}
+
+/** 旧流程没有交接信息时迁移为空数组，照常编辑，不破坏本地已有数据。 */
+function migrateProcess(raw: ExperimentProcess): ExperimentProcess {
+  raw.steps.forEach((step) => {
+    if (!Array.isArray(step.outputs)) step.outputs = [];
+    if (!Array.isArray(step.inputs)) step.inputs = [];
+    step.outputs.forEach((output) => {
+      if (typeof output.removed !== 'boolean') output.removed = false;
+    });
+  });
+  raw.versions?.forEach((version) => {
+    version.steps?.forEach((step) => {
+      if (!Array.isArray((step as ProcessStep).outputs)) (step as ProcessStep).outputs = [];
+      if (!Array.isArray((step as ProcessStep).inputs)) (step as ProcessStep).inputs = [];
+    });
+  });
+  reconcileHandoffs(raw);
+  return raw;
 }
 
 function loadProcess(): ExperimentProcess {
   try {
     const value = localStorage.getItem(STORAGE_KEY);
-    if (!value) return initialProcess();
+    if (!value) return migrateProcess(initialProcess());
     const parsed = JSON.parse(value) as ExperimentProcess;
-    return parsed.id && Array.isArray(parsed.steps) ? parsed : initialProcess();
+    return parsed.id && Array.isArray(parsed.steps) ? migrateProcess(parsed) : migrateProcess(initialProcess());
   } catch {
-    return initialProcess();
+    return migrateProcess(initialProcess());
   }
 }
 
@@ -236,10 +309,20 @@ function App() {
   const downstreamIds = useMemo(() => collectDownstream(process.steps, lastModifiedId), [process.steps, lastModifiedId]);
   const impactedSteps = process.steps.filter((step) => downstreamIds.includes(step.id));
   const missingSafetySteps = process.steps.filter(hasMissingSafety);
+  const brokenList = useMemo(() => brokenSteps(process.steps), [process.steps]);
+  const brokenStepIds = useMemo(() => new Set(brokenList.map((item) => item.step.id)), [brokenList]);
+  const selectedBroken: BrokenLink[] = selectedStep ? brokenInputsOfStep(process.steps, selectedStep) : [];
+  const [pendingInputRef, setPendingInputRef] = useState('');
   const pendingReviewCount = process.steps.filter((step) => step.status === 'submitted' || step.status === 'returned').length;
   const confirmedCount = process.steps.filter((step) => step.status === 'confirmed').length;
   const reviewProgress = process.steps.length ? Math.round((confirmedCount / process.steps.length) * 100) : 0;
   const versionDiff = useMemo(() => compareVersions(process, compareBaseId, compareTargetId), [process, compareBaseId, compareTargetId]);
+
+  const selectedStepIndex = selectedStep ? process.steps.indexOf(selectedStep) : -1;
+  const upstreamGroups = useMemo(
+    () => (selectedStep ? upstreamOutputGroups(process.steps, selectedStepIndex) : []),
+    [process.steps, selectedStep, selectedStepIndex]
+  );
 
   useEffect(() => {
     if (!initialSaveSkipped.current) {
@@ -310,7 +393,7 @@ function App() {
       draft.steps.push({
         id, title: '新的实验步骤', purpose: '', materials: '', equipment: '', amount: '', duration: 10,
         hazards: [], controls: '', dependencies: draft.steps.at(-1) ? [draft.steps.at(-1)!.id] : [],
-        safetyNote: '', expectedResult: '', status: 'draft', comments: []
+        safetyNote: '', expectedResult: '', status: 'draft', comments: [], outputs: [], inputs: []
       });
       draft.status = 'draft';
     });
@@ -327,6 +410,9 @@ function App() {
     copy.status = 'draft';
     copy.comments = [];
     copy.dependencies = [...copy.dependencies];
+    copy.outputs = copy.outputs.map((output) => ({ ...output, id: uid('output') }));
+    // 交接引用仍指向上游产物；若复制后顺序越界，对账会标记并提示重新核对
+    copy.inputs = copy.inputs.map((input) => ({ ...input, id: uid('input') }));
     commitProcess((draft) => {
       const index = draft.steps.findIndex((step) => step.id === selectedStep.id);
       draft.steps.splice(index + 1, 0, copy);
@@ -365,6 +451,111 @@ function App() {
     updateStep('dependencies', next);
   };
 
+  const selectStep = (id: string): void => {
+    setSelectedStepId(id);
+    setPendingInputRef('');
+  };
+
+  const addOutput = (): void => {
+    if (!selectedStep || process.status === 'frozen') return;
+    const stepId = selectedStep.id;
+    setLastModifiedId(stepId);
+    commitProcess((draft) => {
+      const step = draft.steps.find((item) => item.id === stepId);
+      step?.outputs.push({ id: uid('output'), name: '新产物', spec: '', removed: false });
+    });
+  };
+
+  const updateOutput = (outputId: string, field: 'name' | 'spec', value: string): void => {
+    if (!selectedStep || process.status === 'frozen') return;
+    const stepId = selectedStep.id;
+    setLastModifiedId(stepId);
+    commitProcess((draft) => {
+      const output = draft.steps.find((item) => item.id === stepId)?.outputs.find((item) => item.id === outputId);
+      if (output) output[field] = value;
+    });
+  };
+
+  const toggleOutputRemoved = (outputId: string): void => {
+    if (!selectedStep || process.status === 'frozen') return;
+    const stepId = selectedStep.id;
+    setLastModifiedId(stepId);
+    commitProcess((draft) => {
+      const output = draft.steps.find((item) => item.id === stepId)?.outputs.find((item) => item.id === outputId);
+      if (output) output.removed = !output.removed;
+    });
+  };
+
+  const addInput = (): void => {
+    if (!selectedStep || !pendingInputRef || process.status === 'frozen') return;
+    const [sourceStepId, outputId] = pendingInputRef.split('::');
+    const source = process.steps.find((step) => step.id === sourceStepId);
+    const output = source?.outputs.find((item) => item.id === outputId);
+    if (!source || !output) return;
+    const stepId = selectedStep.id;
+    commitProcess((draft) => {
+      const step = draft.steps.find((item) => item.id === stepId);
+      if (!step) return;
+      if (step.inputs.some((input) => input.sourceStepId === sourceStepId && input.outputId === outputId)) return;
+      step.inputs.push({
+        id: uid('input'), sourceStepId, outputId,
+        snapshotName: output.name, snapshotSpec: output.spec, usage: ''
+      });
+    });
+    setPendingInputRef('');
+  };
+
+  const changeInputSource = (inputId: string, ref: string): void => {
+    if (!selectedStep || process.status === 'frozen') return;
+    const [sourceStepId, outputId] = ref.split('::');
+    const source = process.steps.find((step) => step.id === sourceStepId);
+    const output = source?.outputs.find((item) => item.id === outputId);
+    if (!source || !output) return;
+    const stepId = selectedStep.id;
+    commitProcess((draft) => {
+      const input = draft.steps.find((item) => item.id === stepId)?.inputs.find((item) => item.id === inputId);
+      if (!input) return;
+      input.sourceStepId = sourceStepId;
+      input.outputId = outputId;
+      input.snapshotName = output.name;
+      input.snapshotSpec = output.spec;
+    });
+  };
+
+  const updateInputUsage = (inputId: string, value: string): void => {
+    if (!selectedStep || process.status === 'frozen') return;
+    const stepId = selectedStep.id;
+    commitProcess((draft) => {
+      const input = draft.steps.find((item) => item.id === stepId)?.inputs.find((item) => item.id === inputId);
+      if (input) input.usage = value;
+    });
+  };
+
+  /** 按当前上游登记刷新快照，表示已重新核对名称与规格（复核人可在此复核页直接确认）。 */
+  const reconfirmInput = (inputId: string): void => {
+    if (!selectedStep || process.status === 'frozen') return;
+    const stepId = selectedStep.id;
+    commitProcess((draft) => {
+      const step = draft.steps.find((item) => item.id === stepId);
+      const input = step?.inputs.find((item) => item.id === inputId);
+      const output = draft.steps.find((item) => item.id === input?.sourceStepId)
+        ?.outputs.find((item) => item.id === input?.outputId);
+      if (input && output && !output.removed) {
+        input.snapshotName = output.name;
+        input.snapshotSpec = output.spec;
+      }
+    });
+  };
+
+  const removeInput = (inputId: string): void => {
+    if (!selectedStep || process.status === 'frozen') return;
+    const stepId = selectedStep.id;
+    commitProcess((draft) => {
+      const step = draft.steps.find((item) => item.id === stepId);
+      if (step) step.inputs = step.inputs.filter((item) => item.id !== inputId);
+    });
+  };
+
   const submitForReview = (): void => {
     if (process.status === 'frozen') return;
     commitProcess((draft) => {
@@ -392,6 +583,10 @@ function App() {
 
   const setStepStatus = (status: StepStatus): void => {
     if (!selectedStep) return;
+    if (status === 'confirmed' && brokenStepIds.has(selectedStep.id)) {
+      setSavedLabel('交接断链未恢复，不能确认该步骤');
+      return;
+    }
     updateStep('status', status);
     setLastModifiedId(status === 'returned' ? selectedStep.id : null);
   };
@@ -409,6 +604,10 @@ function App() {
     if (process.status === 'frozen') return;
     if (process.steps.some((step) => step.status !== 'confirmed') || missingSafetySteps.length) {
       setSavedLabel('冻结条件未满足');
+      return;
+    }
+    if (brokenList.length) {
+      setSavedLabel('存在交接断链，重新确认前不能冻结');
       return;
     }
     const nextNumber = nextMinorVersion(process.version);
@@ -472,7 +671,7 @@ function App() {
           <Button icon="undo" text="撤销" minimal disabled={history.past.length === 0} onClick={() => dispatch({ type: 'undo' })} />
           <Button icon="redo" text="重做" minimal disabled={history.future.length === 0} onClick={() => dispatch({ type: 'redo' })} />
           <Button icon="floppy-disk" text="保存快照" onClick={addVersionSnapshot} />
-          <Button icon="lock" text="冻结版本" intent="primary" onClick={freezeVersion} disabled={process.status === 'frozen'} />
+          <Button icon="lock" text="冻结版本" intent="primary" onClick={freezeVersion} disabled={process.status === 'frozen' || brokenList.length > 0} />
         </div>
       </header>
 
@@ -492,7 +691,7 @@ function App() {
         <div className="banner-progress">
           <div><span>复核进度</span><strong>{confirmedCount}/{process.steps.length}</strong></div>
           <ProgressBar value={reviewProgress / 100} intent={reviewProgress === 100 ? 'success' : 'primary'} stripes={reviewProgress < 100} />
-          <small>{pendingReviewCount ? `${pendingReviewCount} 条待处理` : '所有步骤已处理'} · {missingSafetySteps.length} 条安全缺口</small>
+          <small>{pendingReviewCount ? `${pendingReviewCount} 条待处理` : '所有步骤已处理'} · {missingSafetySteps.length} 条安全缺口 · {brokenList.length ? <b className="broken-text">{brokenList.length} 个步骤交接断链</b> : '交接链完整'}</small>
         </div>
       </section>
 
@@ -511,10 +710,14 @@ function App() {
             </div>
             <div className="step-list">
               {process.steps.map((step, index) => (
-                <button key={step.id} className={step.id === selectedStep.id ? 'selected' : ''} onClick={() => setSelectedStepId(step.id)}>
+                <button key={step.id} className={step.id === selectedStep.id ? 'selected' : ''} onClick={() => selectStep(step.id)}>
                   <span className={`step-number ${step.status}`}>{String(index + 1).padStart(2, '0')}</span>
-                  <span className="step-copy"><strong>{step.title}</strong><small>{step.duration} 分钟 · {statusLabel(step.status)}</small></span>
-                  {hasMissingSafety(step) && <Icon icon="warning-sign" intent="danger" size={13} />}
+                  <span className="step-copy"><strong>{step.title}</strong><small>{step.duration} 分钟 · {statusLabel(step.status)}{brokenStepIds.has(step.id) ? ' · 交接断链' : ''}</small></span>
+                  {brokenStepIds.has(step.id)
+                    ? <Icon icon="offline" intent="danger" size={13} />
+                    : hasMissingSafety(step)
+                      ? <Icon icon="warning-sign" intent="danger" size={13} />
+                      : null}
                 </button>
               ))}
             </div>
@@ -561,6 +764,146 @@ function App() {
               <FormGroup label="预期结果" labelFor="expected"><TextArea id="expected" fill value={selectedStep.expectedResult} onChange={(event) => updateStep('expectedResult', event.target.value)} /></FormGroup>
             </Card>
 
+            <Card elevation={Elevation.ONE} className="handoff-card">
+              <div className="card-title">
+                <div><span>HANDOFF TRACE</span><h3>步骤交接 · 产物输入输出</h3></div>
+                <Tag minimal intent={selectedBroken.length ? 'danger' : 'success'}>{selectedBroken.length ? `${selectedBroken.length} 条断链` : '交接正常'}</Tag>
+              </div>
+              <p className="muted">每步先登记产物，后续步骤从上游步骤选用产物。上游改名、改规格或移除产物时，引用处会断链并自动退回复核；重新确认前该步骤不能确认，流程不能冻结。</p>
+
+              {selectedBroken.length > 0 && (
+                <Callout intent="danger" icon="offline" className="handoff-break-callout">
+                  <strong>{selectedBroken.length} 条交接断链，本步骤已退回复核</strong>
+                  {selectedBroken.map(({ input, status }) => (
+                    <p key={input.id}>· {status.reasons.join('；')}</p>
+                  ))}
+                </Callout>
+              )}
+
+              <div className="handoff-section-head">
+                <h4>本步骤登记的产物</h4>
+                <Button small minimal icon="add" text="登记产物" onClick={addOutput} disabled={process.status === 'frozen'} />
+              </div>
+              <div className="handoff-outputs">
+                {selectedStep.outputs.map((output) => (
+                  <div className={`handoff-row ${output.removed ? 'removed-output' : ''}`} key={output.id}>
+                    <div className="handoff-row-main">
+                      <InputGroup
+                        small fill placeholder="产物名称（如：反应混合液）" value={output.name}
+                        onChange={(event) => updateOutput(output.id, 'name', event.target.value)}
+                        disabled={process.status === 'frozen' || output.removed}
+                      />
+                      <InputGroup
+                        small fill placeholder="规格 / 数量 / 状态（如：2.50 g，62–66 ℃）" value={output.spec}
+                        onChange={(event) => updateOutput(output.id, 'spec', event.target.value)}
+                        disabled={process.status === 'frozen' || output.removed}
+                      />
+                    </div>
+                    <Button
+                      small minimal
+                      icon={output.removed ? 'undo' : 'cross'}
+                      text={output.removed ? '恢复' : '移除'}
+                      intent={output.removed ? 'none' : 'danger'}
+                      onClick={() => toggleOutputRemoved(output.id)}
+                      disabled={process.status === 'frozen'}
+                    />
+                  </div>
+                ))}
+                {!selectedStep.outputs.length && <p className="muted handoff-empty">尚未登记产物。登记后下游步骤才能选用并建立可追溯交接。</p>}
+              </div>
+
+              <Divider />
+
+              <div className="handoff-section-head">
+                <h4>选用的上游产物（{selectedStep.inputs.length}）</h4>
+                <div className="handoff-add">
+                  <HTMLSelect
+                    className="handoff-select-small"
+                    value={pendingInputRef}
+                    disabled={process.status === 'frozen' || upstreamGroups.length === 0}
+                    onChange={(event) => setPendingInputRef(event.target.value)}
+                  >
+                    <option value="">{upstreamGroups.length ? '选择上游产物…' : '暂无可选用的上游产物'}</option>
+                    {upstreamGroups.map((group) => (
+                      <optgroup key={group.stepId} label={`${String(group.index + 1).padStart(2, '0')} · ${group.title}`}>
+                        {group.outputs.map((output) => (
+                          <option key={`${group.stepId}::${output.id}`} value={`${group.stepId}::${output.id}`}>
+                            {output.removed ? '（已移除）' : ''}{output.name}{output.spec ? ` · ${output.spec}` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </HTMLSelect>
+                  <Button small icon="link" text="选用" onClick={addInput} disabled={!pendingInputRef || process.status === 'frozen'} />
+                </div>
+              </div>
+              <div className="handoff-inputs">
+                {selectedStep.inputs.map((input) => {
+                  const status = resolveInputLink(process.steps, selectedStep, input);
+                  const meta = linkStateMeta(status.state);
+                  const sourceIndex = status.source ? process.steps.indexOf(status.source) : -1;
+                  const refValue = status.source ? `${input.sourceStepId}::${input.outputId}` : '';
+                  const repairable = status.state === 'name-changed' || status.state === 'spec-changed';
+                  const repointable = status.state !== 'linked' && status.state !== 'reordered' && status.source;
+                  return (
+                    <div className={`handoff-row input-row ${status.state === 'linked' ? '' : 'broken'}`} key={input.id}>
+                      <div className="handoff-row-top">
+                        <Tag minimal intent={meta.intent} icon={status.state === 'linked' ? 'link' : 'offline'}>{meta.label}</Tag>
+                        {status.source && (
+                          <HTMLSelect
+                            className="handoff-select-small"
+                            value={refValue}
+                            disabled={process.status === 'frozen' || !repointable}
+                            onChange={(event) => changeInputSource(input.id, event.target.value)}
+                          >
+                            {upstreamGroups.map((group) => (
+                              <optgroup key={group.stepId} label={`${String(group.index + 1).padStart(2, '0')} · ${group.title}`}>
+                                {group.outputs.map((output) => (
+                                  <option key={`${group.stepId}::${output.id}`} value={`${group.stepId}::${output.id}`}>
+                                    {output.removed ? '（已移除）' : ''}{output.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </HTMLSelect>
+                        )}
+                        {!status.source && <Tag minimal intent="danger">来源步骤已删除</Tag>}
+                        <div className="handoff-row-actions">
+                          {repairable && (
+                            <Button small minimal icon="updated" intent="warning"
+                              text="按当前登记重新确认"
+                              onClick={() => reconfirmInput(input.id)}
+                              disabled={process.status === 'frozen'} />
+                          )}
+                          <Button small minimal icon="trash" intent="danger"
+                            onClick={() => removeInput(input.id)}
+                            disabled={process.status === 'frozen'} />
+                        </div>
+                      </div>
+                      <div className="handoff-snapshot">
+                        <span>选用时：<b>{input.snapshotName || '（空）'}</b>{input.snapshotSpec ? ` · ${input.snapshotSpec}` : ''}</span>
+                        {status.output && status.state !== 'removed' && (
+                          <span className={repairable ? 'snapshot-current changed' : 'snapshot-current'}>
+                            当前登记：<b>{status.output.name}</b>{status.output.spec ? ` · ${status.output.spec}` : ''}
+                          </span>
+                        )}
+                        {sourceIndex >= 0 && <small>来源：步骤 {String(sourceIndex + 1).padStart(2, '0')}</small>}
+                      </div>
+                      {status.state !== 'linked' && (
+                        <ul className="handoff-reasons">{status.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+                      )}
+                      <InputGroup
+                        small fill placeholder="本步骤如何使用该产物（用途、用量、操作要求）" value={input.usage}
+                        onChange={(event) => updateInputUsage(input.id, event.target.value)}
+                        disabled={process.status === 'frozen'}
+                      />
+                    </div>
+                  );
+                })}
+                {!selectedStep.inputs.length && <p className="muted handoff-empty">尚未选用上游产物。可从上方下拉中选择前置步骤登记的产物。</p>}
+              </div>
+            </Card>
+
             <Card elevation={Elevation.ONE} className="dependency-card">
               <div className="card-title"><div><span>DEPENDENCIES</span><h3>前置步骤</h3></div><Tag minimal>{selectedStep.dependencies.length} 个依赖</Tag></div>
               <p className="muted">当前步骤只有在所选前置步骤完成后才能进入执行队列。</p>
@@ -583,7 +926,7 @@ function App() {
                   </Callout>
                   <div className="impact-list">
                     {impactedSteps.map((step) => (
-                      <button key={step.id} onClick={() => setSelectedStepId(step.id)}>
+                      <button key={step.id} onClick={() => selectStep(step.id)}>
                         <Icon icon={step.status === 'confirmed' ? 'endorsed' : 'circle'} intent={step.status === 'confirmed' ? 'success' : 'none'} size={13} />
                         <span><strong>{step.title}</strong><small>{step.status === 'confirmed' ? '已确认内容，需重新复核' : `当前状态：${statusLabel(step.status)}`}</small></span>
                         <Icon icon="chevron-right" size={12} />
@@ -597,14 +940,25 @@ function App() {
             <Card elevation={Elevation.ONE} className="safety-card">
               <div className="card-title"><div><span>SAFETY GATE</span><h3>安全完整性</h3></div><Tag intent={missingSafetySteps.length ? 'danger' : 'success'} minimal>{missingSafetySteps.length ? `${missingSafetySteps.length} 项缺口` : '通过'}</Tag></div>
               {missingSafetySteps.length ? missingSafetySteps.map((step) => (
-                <button className="safety-row" key={step.id} onClick={() => setSelectedStepId(step.id)}><Icon icon="warning-sign" intent="danger" size={14} /><span><strong>{step.title}</strong><small>危险项缺少控制措施或安全说明</small></span></button>
+                <button className="safety-row" key={step.id} onClick={() => selectStep(step.id)}><Icon icon="warning-sign" intent="danger" size={14} /><span><strong>{step.title}</strong><small>危险项缺少控制措施或安全说明</small></span></button>
               )) : <p className="muted">所有存在危险项的步骤都已填写控制措施和安全说明。</p>}
+            </Card>
+
+            <Card elevation={Elevation.ONE} className="handoff-gate-card">
+              <div className="card-title"><div><span>HANDOFF GATE</span><h3>交接链状态</h3></div><Tag intent={brokenList.length ? 'danger' : 'success'} minimal>{brokenList.length ? `${brokenList.length} 个断链` : '全部连通'}</Tag></div>
+              {brokenList.length ? brokenList.map(({ step, links }) => (
+                <button className="safety-row" key={step.id} onClick={() => selectStep(step.id)}>
+                  <Icon icon="offline" intent="danger" size={14} />
+                  <span><strong>{step.title}</strong><small>{links.length} 条上游交接断链，已退回复核</small></span>
+                </button>
+              )) : <p className="muted">所有步骤选用的上游产物均与当前登记一致，可进入冻结检查。</p>}
             </Card>
 
             <Card elevation={Elevation.ONE} className="gate-card">
               <div className="card-title"><div><span>RELEASE GATE</span><h3>提交与冻结</h3></div></div>
               <div className="gate-row"><span>复核状态</span><strong>{confirmedCount}/{process.steps.length}</strong></div>
               <div className="gate-row"><span>安全缺口</span><strong className={missingSafetySteps.length ? 'danger-text' : ''}>{missingSafetySteps.length}</strong></div>
+              <div className="gate-row"><span>交接断链</span><strong className={brokenList.length ? 'danger-text' : ''}>{brokenList.length}</strong></div>
               <div className="gate-row"><span>流程状态</span><strong>{processStatusLabel(process.status)}</strong></div>
               <Divider />
               {process.status === 'frozen' ? <Button fill intent="warning" icon="git-branch" text="从冻结版创建修订" onClick={startRevision} /> : <Button fill intent="primary" icon="send-to" text="提交复核" onClick={submitForReview} />}
@@ -618,8 +972,11 @@ function App() {
           <aside className="review-steps">
             <div className="panel-heading"><div><span>REVIEW QUEUE</span><h3>逐条复核</h3></div><Tag intent={pendingReviewCount ? 'warning' : 'success'}>{pendingReviewCount ? `${pendingReviewCount} 待处理` : '已完成'}</Tag></div>
             {process.steps.map((step, index) => (
-              <button key={step.id} className={`${step.id === selectedStep.id ? 'selected' : ''} ${step.status}`} onClick={() => setSelectedStepId(step.id)}>
-                <span>{String(index + 1).padStart(2, '0')}</span><div><strong>{step.title}</strong><small>{statusLabel(step.status)}</small></div><Icon icon={step.status === 'confirmed' ? 'tick-circle' : step.status === 'returned' ? 'undo' : 'circle'} size={15} />
+              <button key={step.id} className={`${step.id === selectedStep.id ? 'selected' : ''} ${step.status}`} onClick={() => selectStep(step.id)}>
+                <span>{String(index + 1).padStart(2, '0')}</span><div><strong>{step.title}</strong><small>{statusLabel(step.status)}{brokenStepIds.has(step.id) ? ' · 交接断链' : ''}</small></div>
+                {brokenStepIds.has(step.id)
+                  ? <Icon icon="offline" intent="danger" size={15} />
+                  : <Icon icon={step.status === 'confirmed' ? 'tick-circle' : step.status === 'returned' ? 'undo' : 'circle'} size={15} />}
               </button>
             ))}
           </aside>
@@ -636,6 +993,53 @@ function App() {
                   <div className="review-section"><h4>控制措施</h4><p>{selectedStep.controls || '未填写'}</p></div>
                   <div className="review-section"><h4>安全说明</h4><p className={hasMissingSafety(selectedStep) ? 'danger-text' : ''}>{selectedStep.safetyNote || '未填写'}</p></div>
                   {hasMissingSafety(selectedStep) && <Callout intent="danger" icon="warning-sign">当前步骤存在安全信息缺口，不能确认或冻结版本。</Callout>}
+                </Card>
+
+                <Card elevation={Elevation.ONE} className="review-handoff-card">
+                  <div className="card-title">
+                    <div><span>HANDOFF REVIEW</span><h3>步骤交接核对</h3></div>
+                    <Tag minimal intent={selectedBroken.length ? 'danger' : 'success'}>{selectedBroken.length ? `${selectedBroken.length} 条断链` : '交接一致'}</Tag>
+                  </div>
+                  <div className="review-handoff-block">
+                    <h4>本步骤登记产物（{selectedStep.outputs.filter((item) => !item.removed).length}）</h4>
+                    {selectedStep.outputs.length ? selectedStep.outputs.map((output) => (
+                      <div className={`review-handoff-line ${output.removed ? 'removed' : ''}`} key={output.id}>
+                        <Icon icon={output.removed ? 'cross' : 'box'} intent={output.removed ? 'danger' : 'none'} size={13} />
+                        <span><strong>{output.name || '（未命名产物）'}</strong>{output.spec ? ` · ${output.spec}` : ''}{output.removed ? <em>（已移除，下游交接将断链）</em> : null}</span>
+                      </div>
+                    )) : <p className="muted">未登记产物。</p>}
+                  </div>
+                  <div className="review-handoff-block">
+                    <h4>选用的上游产物（{selectedStep.inputs.length}）</h4>
+                    {selectedStep.inputs.length ? selectedStep.inputs.map((input) => {
+                      const status = resolveInputLink(process.steps, selectedStep, input);
+                      const meta = linkStateMeta(status.state);
+                      const repairable = status.state === 'name-changed' || status.state === 'spec-changed';
+                      return (
+                        <div className={`review-handoff-line column ${status.state === 'linked' ? '' : 'broken'}`} key={input.id}>
+                          <div className="review-handoff-line-head">
+                            <Tag minimal intent={meta.intent} icon={status.state === 'linked' ? 'link' : 'offline'}>{meta.label}</Tag>
+                            {repairable && (
+                              <Button small minimal intent="warning" icon="updated" text="核对无误，按当前登记重新确认"
+                                disabled={process.status === 'frozen'} onClick={() => reconfirmInput(input.id)} />
+                            )}
+                          </div>
+                          <span className="handoff-snapshot-line">选用快照：<b>{input.snapshotName || '（空）'}</b>{input.snapshotSpec ? ` · ${input.snapshotSpec}` : ''}</span>
+                          {status.output && status.state !== 'removed' && (
+                            <span className={`handoff-snapshot-line ${repairable ? 'changed' : ''}`}>当前登记：<b>{status.output.name}</b>{status.output.spec ? ` · ${status.output.spec}` : ''}</span>
+                          )}
+                          {input.usage && <span className="handoff-snapshot-line muted-line">用途：{input.usage}</span>}
+                          {status.state !== 'linked' && <ul className="handoff-reasons">{status.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
+                        </div>
+                      );
+                    }) : <p className="muted">未选用上游产物。</p>}
+                  </div>
+                  {selectedBroken.length > 0 && (
+                    <Callout intent="danger" icon="offline">
+                      <strong>交接断链未恢复，本步骤不能确认、流程不能冻结。</strong>
+                      <p>名称/规格变化可由复核人核对后直接"重新确认"；产物移除或来源缺失需退回编写页，由研究员改选产物或删除该交接。</p>
+                    </Callout>
+                  )}
                 </Card>
                 <Card elevation={Elevation.ONE} className="comment-card">
                   <div className="card-title"><div><span>REVIEW COMMENTS</span><h3>复核批注</h3></div><Tag minimal>{selectedStep.comments.length} 条</Tag></div>
@@ -659,15 +1063,16 @@ function App() {
           <aside className="review-actions">
             <Card elevation={Elevation.ONE}>
               <div className="card-title"><div><span>REVIEWER ACTION</span><h3>复核决定</h3></div><Icon icon="endorsed" size={18} /></div>
-              <p className="muted">确认后若修改该步骤，受影响的下游步骤会在编辑页重新提示。</p>
-              <Button fill large intent="success" icon="tick" text="逐条确认" disabled={hasMissingSafety(selectedStep)} onClick={() => setStepStatus('confirmed')} />
+              <p className="muted">确认后若修改该步骤，受影响的下游步骤会在编辑页重新提示。交接断链时该步骤已自动退回，恢复并重新确认前不能冻结。</p>
+              <Button fill large intent="success" icon="tick" text={selectedBroken.length ? '存在交接断链，不能确认' : '逐条确认'}
+                disabled={hasMissingSafety(selectedStep) || selectedBroken.length > 0} onClick={() => setStepStatus('confirmed')} />
               <Button fill large icon="undo" text="退回修改" intent="warning" onClick={() => setStepStatus('returned')} />
               <Button fill large minimal icon="refresh" text="恢复为待复核" onClick={() => setStepStatus('submitted')} />
               <Divider />
               <div className="review-progress-list">
-                {process.steps.map((step) => <div key={step.id}><span>{step.title}</span><Tag minimal intent={step.status === 'confirmed' ? 'success' : step.status === 'returned' ? 'danger' : 'warning'}>{statusLabel(step.status)}</Tag></div>)}
+                {process.steps.map((step) => <div key={step.id}><span>{brokenStepIds.has(step.id) ? '🔗 ' : ''}{step.title}</span><Tag minimal intent={step.status === 'confirmed' ? 'success' : step.status === 'returned' ? 'danger' : 'warning'}>{statusLabel(step.status)}</Tag></div>)}
               </div>
-              <Button fill intent="primary" icon="lock" text="全部确认后冻结" onClick={freezeVersion} disabled={process.status === 'frozen'} />
+              <Button fill intent="primary" icon="lock" text="全部确认后冻结" onClick={freezeVersion} disabled={process.status === 'frozen' || brokenList.length > 0} />
             </Card>
           </aside>
         </main>
@@ -701,8 +1106,9 @@ function App() {
             <div className="card-title"><div><span>FREEZE RULES</span><h3>冻结检查</h3></div></div>
             <div className={confirmedCount === process.steps.length ? 'passed' : ''}><Icon icon={confirmedCount === process.steps.length ? 'tick-circle' : 'circle'} /><span><strong>所有步骤已确认</strong><small>{confirmedCount}/{process.steps.length}</small></span></div>
             <div className={!missingSafetySteps.length ? 'passed' : ''}><Icon icon={!missingSafetySteps.length ? 'tick-circle' : 'circle'} /><span><strong>安全信息完整</strong><small>{missingSafetySteps.length} 个缺口</small></span></div>
+            <div className={!brokenList.length ? 'passed' : ''}><Icon icon={!brokenList.length ? 'tick-circle' : 'offline'} /><span><strong>交接链全部连通</strong><small>{brokenList.length} 个步骤断链，已退回复核</small></span></div>
             <div className={process.steps.every((step) => step.dependencies.every((id) => process.steps.some((item) => item.id === id))) ? 'passed' : ''}><Icon icon="git-merge" /><span><strong>依赖引用有效</strong><small>{process.steps.reduce((sum, step) => sum + step.dependencies.length, 0)} 条依赖</small></span></div>
-            <Button fill intent="primary" icon="lock" text="冻结当前版本" onClick={freezeVersion} disabled={process.status === 'frozen' || confirmedCount !== process.steps.length || missingSafetySteps.length > 0} />
+            <Button fill intent="primary" icon="lock" text="冻结当前版本" onClick={freezeVersion} disabled={process.status === 'frozen' || confirmedCount !== process.steps.length || missingSafetySteps.length > 0 || brokenList.length > 0} />
           </Card>
         </main>
       )}
@@ -765,6 +1171,8 @@ function compareVersions(process: ExperimentProcess, baseId: string, targetId: s
     if (before.controls !== step.controls || before.safetyNote !== step.safetyNote) fields.push('安全控制');
     if (JSON.stringify(before.dependencies) !== JSON.stringify(step.dependencies)) fields.push('依赖关系');
     if (before.expectedResult !== step.expectedResult) fields.push('预期结果');
+    if (JSON.stringify(before.outputs ?? []) !== JSON.stringify(step.outputs ?? [])) fields.push('登记产物');
+    if (JSON.stringify(before.inputs ?? []) !== JSON.stringify(step.inputs ?? [])) fields.push('产物交接');
     if (fields.length) diffs.push({ id: step.id, title: step.title, kind: 'changed', detail: `变化字段：${fields.join('、')}。` });
   });
   return diffs;

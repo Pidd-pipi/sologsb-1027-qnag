@@ -70,7 +70,7 @@ button, input, textarea, select { font: inherit; }
 .step-actions { padding: 9px; display: flex; justify-content: center; border-top: 1px solid #e6eaf0; background: #f8fafb; }
 .editor-main { min-width: 0; display: grid; gap: 14px; }
 .bp6-card { margin: 0; }
-.process-meta-card, .step-editor-card, .dependency-card, .review-summary, .comment-card, .impact-card, .safety-card, .gate-card, .version-panel, .diff-panel, .freeze-rules { padding: 19px; border: 1px solid var(--line); border-radius: 10px; }
+.process-meta-card, .step-editor-card, .dependency-card, .review-summary, .comment-card, .impact-card, .safety-card, .gate-card, .version-panel, .diff-panel, .freeze-rules, .handoff-card, .handoff-gate-card, .review-handoff-card { padding: 19px; border: 1px solid var(--line); border-radius: 10px; }
 .card-title { margin-bottom: 16px; }
 .meta-grid, .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 .form-grid.two-column { grid-template-columns: 1fr 1fr; }
@@ -151,6 +151,44 @@ button, input, textarea, select { font: inherit; }
 .freeze-rules > div strong { font-size: 10px; }
 .freeze-rules > div small { color: #8692a1; font-size: 9px; }
 .freeze-rules .bp6-button { margin-top: 14px; }
+.broken-text { color: #ff9c9c; font-weight: 600; }
+.handoff-break-callout { margin: 12px 0; }
+.handoff-break-callout p { margin: 3px 0 0; font-size: 10px; line-height: 1.55; }
+.handoff-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 14px 0 9px; }
+.handoff-section-head h4, .review-handoff-block h4 { margin: 0; color: #465365; font-size: 11px; }
+.handoff-add { display: flex; gap: 7px; align-items: center; }
+.handoff-add .bp6-html-select { min-width: 260px; max-width: 380px; }
+.handoff-select-small.bp6-html-select { font-size: 12px; height: 24px; }
+.handoff-select-small .bp6-button, .handoff-select-small select { height: 24px; font-size: 12px; }
+.handoff-outputs, .handoff-inputs { display: grid; gap: 8px; }
+.handoff-row { padding: 10px 11px; border: 1px solid #e2e7ed; border-radius: 8px; background: #f9fafb; }
+.handoff-row.broken { border-color: #e7b4b4; background: #fdf4f4; }
+.handoff-row.removed-output { opacity: .62; }
+.handoff-row-main { display: grid; grid-template-columns: minmax(130px, .7fr) 1.4fr auto; gap: 8px; align-items: center; }
+.handoff-row-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.handoff-row-top .bp6-html-select { min-width: 220px; max-width: 320px; }
+.handoff-row-actions { margin-left: auto; display: flex; gap: 4px; }
+.handoff-row .bp6-input { margin-top: 8px; }
+.handoff-snapshot { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 2px; font-size: 10px; color: #697687; }
+.handoff-snapshot b { color: #33414f; font-weight: 600; }
+.handoff-snapshot .snapshot-current { color: var(--green); }
+.handoff-snapshot .snapshot-current.changed { color: var(--amber); }
+.handoff-snapshot small { color: #95a0ae; }
+.handoff-reasons { margin: 6px 0 0; padding-left: 16px; color: var(--red); font-size: 10px; line-height: 1.6; }
+.handoff-empty { margin-top: 4px; }
+.review-handoff-block { padding: 11px 0; border-top: 1px solid #e5e9ef; }
+.review-handoff-block:first-of-type { border-top: 0; padding-top: 4px; }
+.review-handoff-line { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; font-size: 11px; color: #465365; }
+.review-handoff-line.column { flex-direction: column; gap: 5px; }
+.review-handoff-line.removed em { color: var(--red); font-style: normal; font-size: 10px; }
+.review-handoff-line.broken { padding: 9px 10px; border: 1px solid #e7b4b4; border-radius: 7px; background: #fdf4f4; }
+.review-handoff-line-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.handoff-snapshot-line { font-size: 10px; color: #5e6b7b; }
+.handoff-snapshot-line b { color: #33414f; font-weight: 600; }
+.handoff-snapshot-line.changed { color: var(--amber); }
+.handoff-snapshot-line.muted-line { color: #8792a2; }
+.review-handoff-card .bp6-callout { margin-top: 6px; }
+.review-handoff-card .bp6-callout p { margin: 4px 0 0; font-size: 10px; line-height: 1.55; }
 .app-footer { min-height: 42px; padding: 13px 22px; display: flex; justify-content: space-between; gap: 20px; color: #778496; background: #e9edf2; border-top: 1px solid #d8dee5; font-size: 9px; }
 @media (max-width: 1240px) {
   .process-banner { grid-template-columns: 1fr 1fr; }
