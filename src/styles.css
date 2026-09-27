@@ -56,7 +56,7 @@ button, input, textarea, select { font: inherit; }
 .panel-heading span, .card-title > div > span { color: var(--blue); font: 600 9px "IBM Plex Mono", monospace; letter-spacing: .12em; }
 .panel-heading h3, .card-title h3 { margin: 4px 0 0; font-size: 15px; }
 .step-list { max-height: 590px; overflow-y: auto; }
-.step-list button, .review-steps > button { width: 100%; min-height: 70px; padding: 11px 12px; display: grid; grid-template-columns: 38px 1fr 16px; align-items: center; gap: 8px; border: 0; border-bottom: 1px solid #e7ebf0; text-align: left; color: var(--ink); background: #fff; cursor: pointer; }
+.step-list button, .review-steps > button { width: 100%; min-height: 70px; padding: 11px 12px; display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 8px; border: 0; border-bottom: 1px solid #e7ebf0; text-align: left; color: var(--ink); background: #fff; cursor: pointer; }
 .step-list button:hover, .review-steps > button:hover { background: #f7f9fb; }
 .step-list button.selected, .review-steps > button.selected { color: #fff; background: #22374a; box-shadow: inset 4px 0 var(--blue); }
 .step-number, .review-steps > button > span { color: #738092; font: 600 11px "IBM Plex Mono", monospace; }
@@ -70,7 +70,7 @@ button, input, textarea, select { font: inherit; }
 .step-actions { padding: 9px; display: flex; justify-content: center; border-top: 1px solid #e6eaf0; background: #f8fafb; }
 .editor-main { min-width: 0; display: grid; gap: 14px; }
 .bp6-card { margin: 0; }
-.process-meta-card, .step-editor-card, .dependency-card, .review-summary, .comment-card, .impact-card, .safety-card, .gate-card, .version-panel, .diff-panel, .freeze-rules { padding: 19px; border: 1px solid var(--line); border-radius: 10px; }
+.process-meta-card, .step-editor-card, .dependency-card, .handoff-card, .handoff-status-card, .review-summary, .comment-card, .impact-card, .safety-card, .gate-card, .version-panel, .diff-panel, .freeze-rules { padding: 19px; border: 1px solid var(--line); border-radius: 10px; }
 .card-title { margin-bottom: 16px; }
 .meta-grid, .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 .form-grid.two-column { grid-template-columns: 1fr 1fr; }
@@ -78,6 +78,24 @@ button, input, textarea, select { font: inherit; }
 .bp6-form-group { margin-bottom: 13px; }
 .bp6-label { color: #4d5968; font-size: 11px; font-weight: 600; }
 .dependency-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
+.handoff-card > .muted { margin-bottom: 12px; }
+.handoff-block { padding: 12px 0 4px; border-top: 1px solid #e5e9ef; }
+.handoff-block + .handoff-block { border-top: 1px solid #e5e9ef; }
+.handoff-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+.handoff-heading strong { color: #465365; font-size: 11px; }
+.product-row { display: grid; grid-template-columns: 1fr 1fr 30px; gap: 8px; align-items: center; margin-bottom: 8px; }
+.input-row { margin-bottom: 8px; padding: 10px; display: grid; gap: 8px; border: 1px solid #e2e7ed; border-radius: 8px; background: #fafbfc; }
+.input-row.changed { border-color: #d8a45a; background: #fffaf1; }
+.input-row.missing { border-color: #db8a8a; background: #fff5f5; }
+.input-selects { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; }
+.input-selects .bp6-html-select { min-width: 0; }
+.snapshot-line { color: #6b7787; font-size: 10px; line-height: 1.6; }
+.input-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.step-flags { display: flex; align-items: center; gap: 4px; }
+.handoff-row { width: 100%; padding: 10px 2px; display: grid; grid-template-columns: 18px 1fr; gap: 7px; border: 0; border-bottom: 1px solid #e7ebf0; text-align: left; background: transparent; cursor: pointer; }
+.handoff-row strong, .handoff-row small { display: block; }
+.handoff-row strong { font-size: 10px; }
+.handoff-row small { margin-top: 2px; color: var(--red); font-size: 9px; line-height: 1.5; }
 .muted { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.65; }
 .inspector-panel, .review-actions { display: grid; gap: 14px; position: sticky; top: 85px; }
 .impact-card .bp6-callout { margin-bottom: 10px; }
@@ -173,6 +191,7 @@ button, input, textarea, select { font: inherit; }
   .editor-layout, .review-layout, .compare-layout { padding: 12px; grid-template-columns: 1fr; }
   .inspector-panel, .review-actions, .freeze-rules { grid-column: auto; grid-template-columns: 1fr; position: static; }
   .meta-grid, .form-grid, .form-grid.two-column, .dependency-grid, .review-facts { grid-template-columns: 1fr; }
+  .product-row, .input-selects { grid-template-columns: 1fr; }
   .comment-compose { grid-template-columns: 1fr; }
   .diff-selects { flex-wrap: wrap; justify-content: flex-end; }
   .diff-row, .diff-head { grid-template-columns: 60px 1fr; }
